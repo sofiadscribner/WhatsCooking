@@ -143,4 +143,67 @@ submission <- test %>%
 write_csv(submission, "submission.csv")
 
 
+# try using tfidf
+
+
+# load packages
+
+library(tidyverse)
+library(tidymodels)
+library(jsonlite)
+library(tidytext)
+library(stringr)
+library(textrecipes)
+
+# read in data
+
+train <- read_file('train.json') %>%
+  fromJSON()%>%
+  mutate(cuisine = factor(cuisine))
+test <- read_file('test.json') %>%
+  fromJSON()
+
+# define recipe with tfidf
+
+tfidf_recipe <- recipe(cuisine ~ ingredients,
+                    data = train) %>%
+  step_mutate(ingredients = tokenlist(ingredients)) %>%
+  step_tokenfilter(ingredients, max_tokens=500) %>%
+  step_tfidf(ingredients)
+  
+# model
+
+rf_model <- rand_forest(
+  trees = 1000,
+  mtry = 3,
+  min_n = 5
+) %>%
+  set_engine("ranger") %>%
+  set_mode("classification")
+
+# workflow
+
+tfidf_workflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(tfidf_recipe)
+
+# fit model
+
+rf_fit <- tfidf_workflow %>% fit(data = train)
+
+# make preds
+
+rf_predictions <- predict(rf_fit, test) %>%
+  bind_cols(test)
+
+# format for sub
+
+submission <- test %>%
+  select(id) %>%
+  bind_cols(rf_predictions %>% select(cuisine = .pred_class))
+
+# save
+
+write_csv(submission, "submission.csv")
+
 
