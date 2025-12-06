@@ -207,3 +207,55 @@ submission <- test %>%
 write_csv(submission, "submission.csv")
 
 
+# xgboost with tfidf
+
+library(tidymodels)
+library(jsonlite)
+library(textrecipes)
+library(readr)
+
+# read
+train <- read_file("train.json") %>%
+  fromJSON() %>%
+  mutate(cuisine = factor(cuisine))
+
+test <- read_file("test.json") %>%
+  fromJSON()
+
+# recipe
+tfidf_recipe <- recipe(cuisine ~ ingredients, data = train) %>%
+  step_mutate(ingredients = tokenlist(ingredients)) %>%
+  step_tokenfilter(ingredients, max_tokens = 1500) %>%  
+  step_tfidf(ingredients)
+
+# -------- XGBoost MODEL --------
+
+xgb_model <- boost_tree(
+  trees = 1500,
+  mtry  = 20,        # higher than RF; handles more features well
+  min_n = 5,
+  learn_rate = 0.05,
+  loss_reduction = 0.0,
+  tree_depth = 6
+) %>%
+  set_engine("xgboost", verbose = 1) %>%
+  set_mode("classification")
+
+# workflow
+xgb_workflow <- workflow() %>%
+  add_recipe(tfidf_recipe) %>%
+  add_model(xgb_model)
+
+# fit
+xgb_fit <- xgb_workflow %>% fit(data = train)
+
+# predictions
+xgb_predictions <- predict(xgb_fit, test) %>%
+  bind_cols(test)
+
+# submission
+submission <- test %>%
+  select(id) %>%
+  bind_cols(xgb_predictions %>% select(cuisine = .pred_class))
+
+write_csv(submission, "submission_xgb_longer.csv")
